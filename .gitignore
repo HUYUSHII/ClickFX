@@ -8,3 +8,6 @@
 
 # Claude Code
 .claude/
+
+# 设计文档（本地保留）
+DESIGN.md

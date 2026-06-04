@@ -21,6 +21,7 @@ class AnimationState
 {
     public Point Position;
     public int Age;
+    public int Duration;
     public MouseButtons Button;
 }
 

@@ -7,13 +7,22 @@ using System.Windows.Forms;
 
 static class Program
 {
+    static Mutex _mutex;
+
     [STAThread]
     static void Main()
     {
+        bool createdNew;
+        _mutex = new Mutex(true, "ClickFX_SingleInstance", out createdNew);
+        if (!createdNew)
+        {
+            MessageBox.Show("ClickFX 已在运行中。", "ClickFX",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
         if (Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
             Thread.CurrentThread.SetApartmentState(ApartmentState.STA);
-
-        NativeMethods.timeBeginPeriod(1);
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -31,7 +40,5 @@ static class Program
 
         ConfigManager.Save(manager.Config);
         manager.Dispose();
-
-        NativeMethods.timeEndPeriod(1);
     }
 }

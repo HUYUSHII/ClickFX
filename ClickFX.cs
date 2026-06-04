@@ -146,7 +146,7 @@ class OverlayManager : IDisposable
 
     public AppConfig Config { get; private set; }
 
-    const int TICK_MS = 8;
+    const int TICK_MS = 16;
 
     public OverlayManager()
     {
@@ -170,7 +170,7 @@ class OverlayManager : IDisposable
 
         menu.Items.Add(new ToolStripSeparator());
 
-        var exitItem = new ToolStripMenuItem("退出 ClickFX");
+        var exitItem = new ToolStripMenuItem("退出");
         exitItem.Click += (s, e) => Exit();
         menu.Items.Add(exitItem);
 
@@ -210,20 +210,20 @@ class OverlayManager : IDisposable
 
     void OnTimerTick(object sender, EventArgs e)
     {
+        bool hasAnimations;
         lock (_animations)
         {
             for (int i = _animations.Count - 1; i >= 0; i--)
             {
                 _animations[i].Age += TICK_MS;
-                var effectName = (_animations[i].Button == MouseButtons.Left)
-                    ? Config.LeftEffect
-                    : Config.RightEffect;
-                var effect = EffectRegistry.Get(effectName);
-                int duration = (effect != null) ? effect.Duration : 600;
-                if (_animations[i].Age > duration)
+                if (_animations[i].Age > _animations[i].Duration)
                     _animations.RemoveAt(i);
             }
+            hasAnimations = _animations.Count > 0;
+        }
 
+        if (hasAnimations)
+        {
             for (int i = 0; i < _overlays.Count; i++)
                 _overlays[i].Invalidate();
         }
@@ -253,11 +253,17 @@ class OverlayManager : IDisposable
 
     void AddAnimation(Point pos, MouseButtons button)
     {
+        var effectName = (button == MouseButtons.Left)
+            ? Config.LeftEffect
+            : Config.RightEffect;
+        var effect = EffectRegistry.Get(effectName);
+        int duration = (effect != null) ? effect.Duration : 600;
+
         lock (_animations)
         {
             _animations.Add(new AnimationState
             {
-                Position = pos, Age = 0, Button = button
+                Position = pos, Age = 0, Button = button, Duration = duration
             });
         }
     }
