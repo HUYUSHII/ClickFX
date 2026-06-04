@@ -1,0 +1,10 @@
+# 编译产物
+*.exe
+*.dll
+*.pdb
+*.obj
+*.ilk
+*.res
+
+# Claude Code
+.claude/
