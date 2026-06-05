@@ -62,17 +62,8 @@ static class NativeMethods
     public static extern IntPtr CreateDIBSection(IntPtr hdc, ref BITMAPINFOHEADER pbmi,
         uint usage, out IntPtr ppvBits, IntPtr hSection, uint dwOffset);
 
-    [DllImport("kernel32.dll", EntryPoint = "RtlMoveMemory")]
-    public static extern void CopyMemory(IntPtr dest, IntPtr src, uint count);
-
     [DllImport("kernel32.dll")]
     public static extern void RtlZeroMemory(IntPtr dest, uint count);
-
-    [DllImport("winmm.dll")]
-    public static extern uint timeBeginPeriod(uint uMilliseconds);
-
-    [DllImport("winmm.dll")]
-    public static extern uint timeEndPeriod(uint uMilliseconds);
 
     [DllImport("user32.dll")]
     public static extern bool DestroyIcon(IntPtr hIcon);
@@ -472,7 +463,6 @@ class OverlayForm : Form
 
         if (anims.Count > 0)
         {
-            _cachedGraphics.ResetClip();
             for (int i = 0; i < anims.Count; i++)
             {
                 var color = (anims[i].Button == MouseButtons.Left)

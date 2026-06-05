@@ -153,11 +153,6 @@ class RippleEffect : IClickEffect
 
     Pen _pen = new Pen(Color.Black, 2f);
 
-    static Random MakeRng(int x, int y)
-    {
-        return new Random(unchecked(x * 92837 ^ y * 4177));
-    }
-
     public void Cleanup()
     {
         _pen.Dispose();
@@ -208,11 +203,6 @@ class SparkEffect : IClickEffect
     const float MaxDist = 18f;
 
     SolidBrush _brush = new SolidBrush(Color.Black);
-
-    static Random MakeRng(int x, int y)
-    {
-        return new Random(unchecked(x * 73856093 ^ y * 19349663));
-    }
 
     public void Cleanup()
     {
@@ -382,11 +372,6 @@ class PetalEffect : IClickEffect
     const float PetalWidth = 3.5f;
 
     SolidBrush _petalBrush = new SolidBrush(Color.Black);
-
-    static Random MakeRng(int x, int y)
-    {
-        return new Random(unchecked(x * 6271 ^ y * 4153));
-    }
 
     public void Cleanup()
     {
