@@ -361,6 +361,16 @@ class ConfigForm : Form
         _projectLink.LinkClicked += (s, e) =>
             System.Diagnostics.Process.Start("https://github.com/yuui226/ClickFX");
         Controls.Add(_projectLink);
+        y += 22;
+
+        var donateLabel = new Label
+        {
+            Text = "觉得好用？在 GitHub 仓库的 README 里扫码请作者喝杯咖啡 ☕",
+            Location = new Point(15, y),
+            Size = new Size(340, 18),
+            ForeColor = SystemColors.GrayText
+        };
+        Controls.Add(donateLabel);
         y += 25;
 
         // 确定 / 取消
