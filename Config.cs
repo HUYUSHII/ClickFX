@@ -256,7 +256,6 @@ class ConfigForm : Form
     Panel _leftPreview, _rightPreview;
     TextBox _leftHex, _rightHex;
     Button _leftPick, _rightPick;
-    Label _infoLabel;
     LinkLabel _projectLink;
 
     AppConfig _originalConfig;
@@ -276,7 +275,7 @@ class ConfigForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(380, 380);
+        ClientSize = new Size(380, 290);
 
         int y = 15;
 
@@ -338,19 +337,7 @@ class ConfigForm : Form
         Controls.Add(resetBtn);
         y += 40;
 
-        // 关于信息
-        Controls.Add(new Label { Text = "关于信息：", Location = new Point(15, y + 3), AutoSize = true });
-        y += 25;
-        _infoLabel = new Label
-        {
-            Location = new Point(15, y),
-            Size = new Size(340, 60),
-            BorderStyle = BorderStyle.Fixed3D,
-            BackColor = SystemColors.ControlLightLight
-        };
-        Controls.Add(_infoLabel);
-        y += 65;
-
+        // GitHub 链接和引导文本
         _projectLink = new LinkLabel
         {
             Text = "GitHub: https://github.com/yuui226/ClickFX",
@@ -365,7 +352,7 @@ class ConfigForm : Form
 
         var donateLabel = new Label
         {
-            Text = "觉得好用？在 GitHub 仓库的 README 里扫码请作者喝杯咖啡 ☕",
+            Text = "欢迎在 GitHub 扫码支持，多少都是鼓励，万分感谢",
             Location = new Point(15, y),
             Size = new Size(340, 18),
             ForeColor = SystemColors.GrayText
@@ -398,17 +385,6 @@ class ConfigForm : Form
 
         _leftHex.Text = config.LeftClick.Primary;
         _rightHex.Text = config.RightClick.Primary;
-
-        if (!string.IsNullOrEmpty(config.InfoText))
-        {
-            _infoLabel.Text = config.InfoText
-                + (string.IsNullOrEmpty(config.InfoUrl) ? "" : "\n" + config.InfoUrl);
-        }
-        else
-        {
-            _infoLabel.Text = string.IsNullOrEmpty(config.InfoUrl)
-                ? "" : config.InfoUrl;
-        }
     }
 
     void ApplyValues()
