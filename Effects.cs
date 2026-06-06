@@ -27,14 +27,17 @@ class AnimationState
     public int RandomSeed;
     public string EffectName;
     public IClickEffect CachedEffect;
+    public object EffectData; // 各效果缓存的预计算数据，每动画只算一次
     Color _cachedColor;
+    bool _colorCached;
 
     public Color GetColor(ColorConfig config)
     {
-        if (_cachedColor.A == 0)
+        if (!_colorCached)
         {
             try { _cachedColor = ColorTranslator.FromHtml(config.Primary); }
             catch { _cachedColor = Color.White; }
+            _colorCached = true;
         }
         return _cachedColor;
     }
@@ -48,7 +51,9 @@ static class Easing
     {
         const float c1 = 1.70158f;
         const float c3 = c1 + 1f;
-        return 1f + c3 * (float)Math.Pow(t - 1, 3) + c1 * (float)Math.Pow(t - 1, 2);
+        float tm1 = t - 1f;
+        float tm1_2 = tm1 * tm1;
+        return 1f + c3 * tm1_2 * tm1 + c1 * tm1_2;
     }
 
     public static float EaseInQuad(float t)
@@ -61,6 +66,10 @@ static class Easing
         return 1f - (1f - t) * (1f - t);
     }
 }
+
+// 注意：各效果每帧 new Random(seed) 是有意设计，不能缓存 Random 实例。
+// 因为效果依赖每帧从相同种子开始产生一致的随机序列（粒子角度、大小等），
+// 缓存会导致序列跨帧推进，破坏视觉一致性。
 
 // ==================== 效果：线条爆发 ====================
 
@@ -164,6 +173,14 @@ class RippleEffect : IClickEffect
     public string Name { get { return "水波纹"; } }
     public int Duration { get { return 350; } }
 
+    class Data
+    {
+        public int RingCount;
+        public float MaxRadius;
+        public float Stagger;
+        public float StrokeBase;
+    }
+
     Pen _pen = new Pen(Color.Black, 2f);
 
     public void Cleanup()
@@ -179,26 +196,34 @@ class RippleEffect : IClickEffect
 
         Color baseColor = anim.GetColor(color);
 
-        Random rng = new Random(unchecked(anim.RandomSeed ^ 92837));
-        int ringCount = 2 + rng.Next(3);
-        float maxRadius = 16f + (float)(rng.NextDouble() * 8f);
-        float stagger = 0.08f + (float)(rng.NextDouble() * 0.08f);
-        float strokeBase = 2f + (float)(rng.NextDouble());
-
-        for (int i = 0; i < ringCount; i++)
+        var data = anim.EffectData as Data;
+        if (data == null)
         {
-            float delay = i * stagger;
+            var rng = new Random(unchecked(anim.RandomSeed ^ 92837));
+            data = new Data
+            {
+                RingCount = 2 + rng.Next(3),
+                MaxRadius = 16f + (float)(rng.NextDouble() * 8f),
+                Stagger = 0.08f + (float)(rng.NextDouble() * 0.08f),
+                StrokeBase = 2f + (float)(rng.NextDouble()),
+            };
+            anim.EffectData = data;
+        }
+
+        for (int i = 0; i < data.RingCount; i++)
+        {
+            float delay = i * data.Stagger;
             float ringT = Math.Max(0f, (t - delay) / (1f - delay));
             if (ringT <= 0f) continue;
 
             float expand = Easing.EaseOutQuad(ringT);
             float fade = 1f - Easing.EaseInQuad(ringT);
-            float radius = maxRadius * expand * fade;
+            float radius = data.MaxRadius * expand * fade;
             if (radius < 0.5f || fade <= 0f) continue;
 
             int a = (int)(255 * fade);
             _pen.Color = Color.FromArgb(a, baseColor);
-            _pen.Width = strokeBase * fade;
+            _pen.Width = data.StrokeBase * fade;
 
             g.DrawEllipse(_pen, cx - radius, cy - radius, radius * 2, radius * 2);
         }
@@ -215,6 +240,13 @@ class SparkEffect : IClickEffect
     const int DotCount = 8;
     const float MaxDist = 18f;
 
+    class Data
+    {
+        public float[] Angles;
+        public float[] BaseSizes;
+        public float[] Bris;
+    }
+
     SolidBrush _brush = new SolidBrush(Color.Black);
 
     public void Cleanup()
@@ -230,18 +262,35 @@ class SparkEffect : IClickEffect
 
         Color baseColor = anim.GetColor(color);
 
-        Random rng = new Random(unchecked(anim.RandomSeed ^ 73856093));
+        var data = anim.EffectData as Data;
+        if (data == null)
+        {
+            var rng = new Random(unchecked(anim.RandomSeed ^ 73856093));
+            data = new Data
+            {
+                Angles = new float[DotCount],
+                BaseSizes = new float[DotCount],
+                Bris = new float[DotCount],
+            };
+            for (int i = 0; i < DotCount; i++)
+            {
+                data.Angles[i] = (float)(rng.NextDouble() * Math.PI * 2);
+                data.BaseSizes[i] = 2f + (float)(rng.NextDouble() * 1.5f);
+                data.Bris[i] = 0.85f + (float)(rng.NextDouble() * 0.15f);
+            }
+            anim.EffectData = data;
+        }
 
-        // 粒子：快速弹出，平滑缩小消失
         float shrink = 1f - Easing.EaseInQuad(t);
         if (shrink <= 0f) return;
 
+        float dist = MaxDist * Easing.EaseOutQuad(t);
+
         for (int i = 0; i < DotCount; i++)
         {
-            float angle = (float)(rng.NextDouble() * Math.PI * 2);
-            float dist = MaxDist * Easing.EaseOutQuad(t);
-            float size = (2f + (float)(rng.NextDouble() * 1.5f)) * shrink;
-            float bri = 0.85f + (float)(rng.NextDouble() * 0.15f);
+            float angle = data.Angles[i];
+            float size = data.BaseSizes[i] * shrink;
+            float bri = data.Bris[i];
 
             float px = cx + (float)Math.Cos(angle) * dist;
             float py = cy + (float)Math.Sin(angle) * dist;
@@ -269,6 +318,13 @@ class StarEffect : IClickEffect
     const float SizeJitter = 1.8f;
     const float CurveStrength = 8f;
 
+    class StarData
+    {
+        public float Angle, Delay, Life, Dist, Size, Bri;
+        public float Curve, TwinkleSpeed, InitRot, RotSpeed;
+        public float PerpAngle;
+    }
+
     Pen _pen = new Pen(Color.Black, 1.2f);
     SolidBrush _brush = new SolidBrush(Color.Black);
 
@@ -286,65 +342,69 @@ class StarEffect : IClickEffect
 
         Color baseColor = anim.GetColor(color);
 
-        // 每次点击用不同种子 → 轨迹随机
-        Random rng = new Random(unchecked(anim.RandomSeed ^ 1299709));
+        var stars = anim.EffectData as StarData[];
+        if (stars == null)
+        {
+            var rng = new Random(unchecked(anim.RandomSeed ^ 1299709));
+            stars = new StarData[StarCount];
+            for (int i = 0; i < StarCount; i++)
+            {
+                float angle = (float)(rng.NextDouble() * Math.PI * 2);
+                stars[i] = new StarData
+                {
+                    Angle = angle,
+                    Delay = 0.05f + (float)(rng.NextDouble() * 0.25f),
+                    Life = 0.5f + (float)(rng.NextDouble() * 0.45f),
+                    Dist = MaxDist * (0.6f + (float)(rng.NextDouble() * 0.4f)),
+                    Size = BaseSize + (float)(rng.NextDouble() * SizeJitter),
+                    Bri = 0.75f + (float)(rng.NextDouble() * 0.25f),
+                    Curve = ((rng.Next(2) == 0) ? 1f : -1f) * CurveStrength * (0.5f + (float)(rng.NextDouble())),
+                    TwinkleSpeed = 0.8f + (float)(rng.NextDouble() * 0.7f),
+                    InitRot = (float)(rng.NextDouble() * Math.PI * 2),
+                    RotSpeed = ((rng.Next(2) == 0) ? 1f : -1f) * (80f + (float)(rng.NextDouble() * 120f)),
+                    PerpAngle = angle + (float)Math.PI / 2f,
+                };
+            }
+            anim.EffectData = stars;
+        }
 
-        // ── 星星粒子 ──
         for (int i = 0; i < StarCount; i++)
         {
-            float angle = (float)(rng.NextDouble() * Math.PI * 2);
-            float delay = 0.05f + (float)(rng.NextDouble() * 0.25f);
-            float life = 0.5f + (float)(rng.NextDouble() * 0.45f);
-            float dist = MaxDist * (0.6f + (float)(rng.NextDouble() * 0.4f));
-            float size = BaseSize + (float)(rng.NextDouble() * SizeJitter);
-            float bri = 0.75f + (float)(rng.NextDouble() * 0.25f);
-            float curve = ((rng.Next(2) == 0) ? 1f : -1f) * CurveStrength * (0.5f + (float)(rng.NextDouble()));
-            float twinkleSpeed = 0.8f + (float)(rng.NextDouble() * 0.7f);
-            float initRot = (float)(rng.NextDouble() * Math.PI * 2);
-            float rotSpeed = ((rng.Next(2) == 0) ? 1f : -1f) * (80f + (float)(rng.NextDouble() * 120f));
+            var s = stars[i];
 
-            // 粒子局部时间
-            float localT = (t - delay) / life;
+            float localT = (t - s.Delay) / s.Life;
             if (localT <= 0f || localT >= 1f) continue;
 
-            // 运动：弹出 + 缓慢滑行
             float moveT = Easing.EaseOutQuad(Math.Min(1f, localT * 2.5f));
-            float drift = Easing.EaseInQuad(Math.Max(0f, localT - 0.4f) / 0.6f) * dist * 0.4f;
-            float r = dist * moveT + drift;
+            float drift = Easing.EaseInQuad(Math.Max(0f, localT - 0.4f) / 0.6f) * s.Dist * 0.4f;
+            float r = s.Dist * moveT + drift;
 
-            // 轨迹弯曲（垂直方向偏移）
-            float perpAngle = angle + (float)Math.PI / 2f;
-            float curveAmount = curve * Easing.EaseInQuad(localT);
+            float curveAmount = s.Curve * Easing.EaseInQuad(localT);
 
-            float px = cx + (float)Math.Cos(angle) * r + (float)Math.Cos(perpAngle) * curveAmount;
-            float py = cy + (float)Math.Sin(angle) * r + (float)Math.Sin(perpAngle) * curveAmount;
+            float px = cx + (float)Math.Cos(s.Angle) * r + (float)Math.Cos(s.PerpAngle) * curveAmount;
+            float py = cy + (float)Math.Sin(s.Angle) * r + (float)Math.Sin(s.PerpAngle) * curveAmount;
 
-            // 透明度：淡入 + 缓慢闪烁 + 淡出
             float fadeIn = Math.Min(1f, localT * 6f);
             float fadeOut = 1f - Easing.EaseInQuad(Math.Max(0f, localT - 0.5f) / 0.5f);
-            float twinkle = 0.7f + 0.3f * (float)Math.Sin(localT * twinkleSpeed * Math.PI * 2);
-            float alpha = fadeIn * fadeOut * twinkle * bri;
+            float twinkle = 0.7f + 0.3f * (float)Math.Sin(localT * s.TwinkleSpeed * Math.PI * 2);
+            float alpha = fadeIn * fadeOut * twinkle * s.Bri;
             if (alpha <= 0.01f) continue;
 
-            // 大小：弹出后缓慢缩小
             float sizeScale = Easing.EaseOutBack(Math.Min(1f, localT * 4f))
                             * (1f - Easing.EaseInQuad(Math.Max(0f, localT - 0.6f) / 0.4f) * 0.6f);
-            float s = size * sizeScale;
-            if (s < 0.3f) continue;
+            float sz = s.Size * sizeScale;
+            if (sz < 0.3f) continue;
 
-            // 旋转
-            float rot = initRot + rotSpeed * localT * (float)Math.PI / 180f;
+            float rot = s.InitRot + s.RotSpeed * localT * (float)Math.PI / 180f;
 
             int a = (int)(255 * alpha);
 
-            // 彩色星形主体
             _pen.Width = 1.5f * sizeScale;
             _pen.Color = Color.FromArgb((int)(255 * Math.Min(1f, alpha * 1.2f)), baseColor);
-            DrawTinyStar(g, px, py, s, rot, 4, _pen);
+            DrawTinyStar(g, px, py, sz, rot, 4, _pen);
 
-            // 中心高光点
             _brush.Color = Color.FromArgb(a, Color.White);
-            float dotR = s * 0.15f;
+            float dotR = sz * 0.15f;
             g.FillEllipse(_brush, px - dotR, py - dotR, dotR * 2, dotR * 2);
         }
     }
@@ -384,6 +444,14 @@ class PetalEffect : IClickEffect
     const float PetalLength = 8f;
     const float PetalWidth = 3.5f;
 
+    class Data
+    {
+        public int PetalCount;
+        public float InitRot;
+        public float RotDir;
+        public float SizeVar;
+    }
+
     SolidBrush _petalBrush = new SolidBrush(Color.Black);
 
     public void Cleanup()
@@ -399,27 +467,37 @@ class PetalEffect : IClickEffect
 
         Color baseColor = anim.GetColor(color);
 
-        Random rng = new Random(unchecked(anim.RandomSeed ^ 6271));
-        int petalCount = 3 + rng.Next(3);
-        float initRot = (float)(rng.NextDouble() * 360);
-        float rotDir = (rng.Next(2) == 0) ? 1f : -1f;
-        float sizeVar = 0.8f + (float)(rng.NextDouble() * 0.4f);
+        var data = anim.EffectData as Data;
+        if (data == null)
+        {
+            var rng = new Random(unchecked(anim.RandomSeed ^ 6271));
+            data = new Data
+            {
+                PetalCount = 3 + rng.Next(3),
+                InitRot = (float)(rng.NextDouble() * 360),
+                RotDir = (rng.Next(2) == 0) ? 1f : -1f,
+                SizeVar = 0.8f + (float)(rng.NextDouble() * 0.4f),
+            };
+            anim.EffectData = data;
+        }
 
-        // 膨胀 + 缩小 + 淡出同步进行
         float expand = Easing.EaseOutBack(Math.Min(1f, t * 3f));
         float shrink = 1f - Easing.EaseInQuad(t);
         float dist = MaxDist * expand * shrink;
         float scale = shrink;
         float alpha = shrink;
-        float rotExtra = rotDir * 25f * t;
+        float rotExtra = data.RotDir * 25f * t;
         if (alpha <= 0f) return;
 
         int a = (int)(255 * alpha);
-        float baseRotRad = (initRot + rotExtra) * (float)Math.PI / 180f;
+        float baseRotRad = (data.InitRot + rotExtra) * (float)Math.PI / 180f;
+        float angleStep = (float)(Math.PI * 2) / data.PetalCount;
+        float hl = PetalLength * scale * data.SizeVar;
+        float hw = PetalWidth * scale * data.SizeVar;
 
-        for (int i = 0; i < petalCount; i++)
+        for (int i = 0; i < data.PetalCount; i++)
         {
-            float angle = baseRotRad + i * (float)(Math.PI * 2) / petalCount;
+            float angle = baseRotRad + i * angleStep;
             float pcx = cx + (float)Math.Cos(angle) * dist;
             float pcy = cy + (float)Math.Sin(angle) * dist;
 
@@ -428,8 +506,6 @@ class PetalEffect : IClickEffect
             g.RotateTransform(angle * 180f / (float)Math.PI);
 
             _petalBrush.Color = Color.FromArgb(a, baseColor);
-            float hl = PetalLength * scale * sizeVar;
-            float hw = PetalWidth * scale * sizeVar;
             g.FillEllipse(_petalBrush, -hl, -hw, hl * 2, hw * 2);
 
             g.Restore(state);

@@ -372,6 +372,8 @@ class OverlayManager : IDisposable
         }
     }
 
+    // 注意：返回的列表引用是共享的，调用方必须立即使用，不能跨帧持有。
+    // 安全前提：WinForms 单线程，所有 OnPaint 在同一线程顺序执行。
     readonly List<AnimationState> _screenAnims = new List<AnimationState>();
 
     public List<AnimationState> GetAnimationsForScreen(Rectangle bounds)
@@ -388,7 +390,7 @@ class OverlayManager : IDisposable
         return _screenAnims;
     }
 
-    public void Exit() { Application.ExitThread(); }
+    public void Exit() { Application.Exit(); }
 
     public void Dispose()
     {
@@ -425,21 +427,24 @@ class OverlayManager : IDisposable
 
     static Icon CreateTrayIcon()
     {
-        var bmp = new Bitmap(16, 16);
-        using (var g = Graphics.FromImage(bmp))
+        IntPtr hIcon;
+        using (var bmp = new Bitmap(16, 16))
         {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-            using (var pen = new Pen(Color.FromArgb(80, 140, 255), 2f))
+            using (var g = Graphics.FromImage(bmp))
             {
-                g.DrawEllipse(pen, 3, 3, 10, 10);
-                g.DrawLine(pen, 8, 1, 8, 5);
-                g.DrawLine(pen, 8, 11, 8, 15);
-                g.DrawLine(pen, 1, 8, 5, 8);
-                g.DrawLine(pen, 11, 8, 15, 8);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear(Color.Transparent);
+                using (var pen = new Pen(Color.FromArgb(80, 140, 255), 2f))
+                {
+                    g.DrawEllipse(pen, 3, 3, 10, 10);
+                    g.DrawLine(pen, 8, 1, 8, 5);
+                    g.DrawLine(pen, 8, 11, 8, 15);
+                    g.DrawLine(pen, 1, 8, 5, 8);
+                    g.DrawLine(pen, 11, 8, 15, 8);
+                }
             }
+            hIcon = bmp.GetHicon();
         }
-        IntPtr hIcon = bmp.GetHicon();
         var icon = Icon.FromHandle(hIcon);
         var cloned = (Icon)icon.Clone(); // 拷贝一份，脱离原始句柄
         NativeMethods.DestroyIcon(hIcon);
@@ -457,7 +462,7 @@ class OverlayForm : Form
     IntPtr _cachedHBitmap, _cachedHdcMem, _cachedHdcScreen, _cachedOldObj, _cachedPBits;
     Graphics _cachedGraphics;
     int _cachedW, _cachedH;
-    Rectangle _prevDirty; // 脏矩形：上一帧的绘制区域
+    Rectangle _prevAnimArea; // 上一帧的动效区域（非脏矩形，避免无限增长）
 
     void EnsureDib(int w, int h)
     {
@@ -539,21 +544,23 @@ class OverlayForm : Form
         EnsureDib(w, h);
         if (_cachedHBitmap == IntPtr.Zero) return;
 
-        // 脏矩形：只清零动效覆盖区域 + 上一帧残留区域，避免每帧清零 8MB
+        // 脏矩形 = 上一帧动效区域 ∪ 当前帧动效区域（不含历史，避免无限增长）
         const int MARGIN = 40;
-        Rectangle dirty = _prevDirty;
+        Rectangle dirty = _prevAnimArea;
+        Rectangle curAnimArea = Rectangle.Empty;
 
         for (int i = 0; i < anims.Count; i++)
         {
             int ax = anims[i].Position.X - Left - MARGIN;
             int ay = anims[i].Position.Y - Top - MARGIN;
-            dirty = Rectangle.Union(dirty, new Rectangle(ax, ay, MARGIN * 2, MARGIN * 2));
+            var area = new Rectangle(ax, ay, MARGIN * 2, MARGIN * 2);
+            dirty = Rectangle.Union(dirty, area);
+            curAnimArea = Rectangle.Union(curAnimArea, area);
         }
 
         dirty.Intersect(new Rectangle(0, 0, w, h));
         if (!dirty.IsEmpty)
         {
-            // 按 full-width 行清零，一次 P/Invoke 调用
             int stride = w * 4;
             IntPtr start = _cachedPBits + dirty.Y * stride;
             uint bytes = (uint)(dirty.Height * stride);
@@ -573,7 +580,7 @@ class OverlayForm : Form
             }
         }
 
-        _prevDirty = dirty;
+        _prevAnimArea = curAnimArea;
 
         var pptDst = new POINT { X = Left, Y = Top };
         var size = new SIZE { cx = w, cy = h };

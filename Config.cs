@@ -170,6 +170,10 @@ static class ConfigManager
         int ver;
         if (d.ContainsKey("Version") && int.TryParse(d["Version"], out ver))
             c.Version = ver;
+
+        // 版本迁移：按版本号依次升级配置结构
+        // if (ver < 2) { /* v1 → v2 迁移逻辑 */ }
+        // if (ver < 3) { /* v2 → v3 迁移逻辑 */ }
         if (d.ContainsKey("LeftEffect"))
             c.LeftEffect = d["LeftEffect"];
         if (d.ContainsKey("RightEffect"))
