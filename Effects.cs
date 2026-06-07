@@ -625,30 +625,49 @@ class VortexEffect : IClickEffect
 class FragmentEffect : IClickEffect
 {
     public string Name { get { return "碎片"; } }
-    public int Duration { get { return 500; } }
+    public int Duration { get { return 600; } }
 
-    const int FragCount = 8;
-    const float Gravity = 120f;   // 重力加速度（像素/s²，相对 1x 缩放）
+    const int BigFragCount = 6;    // 大碎片
+    const int SmallFragCount = 12; // 小碎屑
+    const float Gravity = 180f;    // 重力加速度
 
     class Data
     {
-        public float[] FragAngle;    // 初始飞出方向
-        public float[] FragSpeed;    // 飞出速度
-        public float[] FragRot;      // 旋转角速度（度/s）
-        public float[] FragSize;     // 基础尺寸
-        public float[] FragBri;      // 亮度
-        public float[] FragShape;    // 0-1 选择三角/四边形
-        public float GravityDirX;    // 重力方向（随机偏一点）
-        public float GravityDirY;
+        // 大碎片
+        public float[] BigVx, BigVy, BigRotSpeed, BigSize, BigBri;
+        public int[] BigVerts;
+        public float[][] BigShapeX, BigShapeY;
+        public PointF[][] BigPts;    // 每碎片独立的复用顶点数组
+        // 小碎屑
+        public float[] SmVx, SmVy, SmSize, SmBri;
+        public float GravityX, GravityY;
     }
 
     SolidBrush _brush = new SolidBrush(Color.Black);
+    Pen _edgePen = new Pen(Color.Black, 1f);
 
     static readonly float PI = (float)Math.PI;
+    static readonly float Deg2Rad = PI / 180f;
 
     public void Cleanup()
     {
         _brush.Dispose();
+        _edgePen.Dispose();
+    }
+
+    // 生成不规则多边形顶点（以原点为中心，外接圆半径约 r）
+    static void MakeIrregularPoly(Random rng, int verts, float r,
+                                  out float[] xs, out float[] ys)
+    {
+        xs = new float[verts];
+        ys = new float[verts];
+        for (int i = 0; i < verts; i++)
+        {
+            float angle = i * PI * 2f / verts + (float)(rng.NextDouble() - 0.5) * 0.6f;
+            float rad = r * (0.65f + (float)(rng.NextDouble()) * 0.45f);
+            xs[i] = (float)Math.Cos(angle) * rad;
+            ys[i] = (float)Math.Sin(angle) * rad;
+        }
     }
 
     public void Draw(Graphics g, AnimationState anim, ColorConfig color, Rectangle screenBounds)
@@ -665,101 +684,156 @@ class FragmentEffect : IClickEffect
         {
             var rng = new Random(unchecked(anim.RandomSeed ^ 2718));
 
-            // 重力方向：大致向下，随机偏一点
-            float gravAngle = PI * 0.5f + (float)((rng.NextDouble() - 0.5) * 0.6f);
+            float gravAngle = PI * 0.5f + (float)((rng.NextDouble() - 0.5) * 0.5f);
+
+            float gCos = (float)Math.Cos(gravAngle);
+            float gSin = (float)Math.Sin(gravAngle);
 
             data = new Data
             {
-                FragAngle = new float[FragCount],
-                FragSpeed = new float[FragCount],
-                FragRot = new float[FragCount],
-                FragSize = new float[FragCount],
-                FragBri = new float[FragCount],
-                FragShape = new float[FragCount],
-                GravityDirX = (float)Math.Cos(gravAngle),
-                GravityDirY = (float)Math.Sin(gravAngle),
+                BigVx = new float[BigFragCount],
+                BigVy = new float[BigFragCount],
+                BigRotSpeed = new float[BigFragCount],
+                BigSize = new float[BigFragCount],
+                BigBri = new float[BigFragCount],
+                BigVerts = new int[BigFragCount],
+                BigShapeX = new float[BigFragCount][],
+                BigShapeY = new float[BigFragCount][],
+                BigPts = new PointF[BigFragCount][],
+                SmVx = new float[SmallFragCount],
+                SmVy = new float[SmallFragCount],
+                SmSize = new float[SmallFragCount],
+                SmBri = new float[SmallFragCount],
+                GravityX = gCos,
+                GravityY = gSin,
             };
-            for (int i = 0; i < FragCount; i++)
+
+            // 大碎片：预计算速度分量，避免每帧 Cos/Sin
+            for (int i = 0; i < BigFragCount; i++)
             {
-                data.FragAngle[i] = (float)(rng.NextDouble() * PI * 2);
-                data.FragSpeed[i] = 25f + (float)(rng.NextDouble() * 35f);
-                data.FragRot[i] = (float)((rng.NextDouble() - 0.5) * 500f);
-                data.FragSize[i] = 3f + (float)(rng.NextDouble() * 3f);
-                data.FragBri[i] = 0.7f + (float)(rng.NextDouble() * 0.3f);
-                data.FragShape[i] = (float)rng.NextDouble();
+                float angle = (float)(rng.NextDouble() * PI * 2) + (float)(rng.NextDouble() - 0.5) * 0.4f;
+                float speed = 30f + (float)(rng.NextDouble() * 70f);
+                data.BigVx[i] = (float)Math.Cos(angle) * speed;
+                data.BigVy[i] = (float)Math.Sin(angle) * speed;
+                data.BigRotSpeed[i] = (float)((rng.NextDouble() - 0.5) * 600f);
+                data.BigSize[i] = 4f + (float)(rng.NextDouble() * 4f);
+                data.BigBri[i] = 0.75f + (float)(rng.NextDouble() * 0.25f);
+                data.BigVerts[i] = 3 + rng.Next(3);
+                MakeIrregularPoly(rng, data.BigVerts[i], 1f,
+                    out data.BigShapeX[i], out data.BigShapeY[i]);
+                data.BigPts[i] = new PointF[data.BigVerts[i]];
             }
+
+            // 小碎屑：同样预计算
+            for (int i = 0; i < SmallFragCount; i++)
+            {
+                float angle = (float)(rng.NextDouble() * PI * 2);
+                float speed = 50f + (float)(rng.NextDouble() * 80f);
+                data.SmVx[i] = (float)Math.Cos(angle) * speed;
+                data.SmVy[i] = (float)Math.Sin(angle) * speed;
+                data.SmSize[i] = 1.5f + (float)(rng.NextDouble() * 2f);
+                data.SmBri[i] = 0.6f + (float)(rng.NextDouble() * 0.4f);
+            }
+
             anim.EffectData = data;
         }
 
-        // ---- 碎片阶段 ----
-        float fragT = Math.Max(0f, (t - 0.15f) / 0.85f);
-        if (fragT > 0f)
+        // ---- 命中闪光 + 冲击波 ----
+        if (t < 0.15f)
         {
-            float fragAlpha = 1f - Easing.EaseInQuad(fragT);
-            if (fragAlpha <= 0f) return;
-
-            float time = fragT * Duration / 1000f; // 转秒
-
-            for (int i = 0; i < FragCount; i++)
-            {
-                float bri = data.FragBri[i];
-                float vx = (float)Math.Cos(data.FragAngle[i]) * data.FragSpeed[i];
-                float vy = (float)Math.Sin(data.FragAngle[i]) * data.FragSpeed[i];
-
-                // 抛物线运动：位置 = 初速度*t + 0.5*重力*t²
-                float px = cx + (vx * time + 0.5f * data.GravityDirX * Gravity * time * time) * scale;
-                float py = cy + (vy * time + 0.5f * data.GravityDirY * Gravity * time * time) * scale;
-
-                float rot = data.FragRot[i] * time;
-                float sz = data.FragSize[i] * scale * (0.8f + 0.2f * fragAlpha);
-                if (sz < 0.5f) continue;
-
-                int a = (int)(255 * fragAlpha * bri);
-                _brush.Color = Color.FromArgb(a,
-                    Math.Min(255, (int)(baseColor.R * bri)),
-                    Math.Min(255, (int)(baseColor.G * bri)),
-                    Math.Min(255, (int)(baseColor.B * bri)));
-
-                GraphicsState state = g.Save();
-                g.TranslateTransform(px, py);
-                g.RotateTransform(rot);
-
-                // 不规则多边形：三角形或四边形
-                if (data.FragShape[i] < 0.5f)
-                {
-                    // 三角形
-                    PointF[] tri = {
-                        new PointF(0, -sz),
-                        new PointF(-sz * 0.7f, sz * 0.6f),
-                        new PointF(sz * 0.8f, sz * 0.5f),
-                    };
-                    g.FillPolygon(_brush, tri);
-                }
-                else
-                {
-                    // 不规则四边形
-                    float skew = 0.4f + data.FragShape[i] * 0.4f;
-                    PointF[] quad = {
-                        new PointF(-sz * 0.6f, -sz),
-                        new PointF(sz, -sz * skew),
-                        new PointF(sz * 0.7f, sz * 0.8f),
-                        new PointF(-sz * 0.8f, sz * 0.6f),
-                    };
-                    g.FillPolygon(_brush, quad);
-                }
-
-                g.Restore(state);
-            }
-        }
-
-        // ---- 命中闪光 ----
-        if (t < 0.12f)
-        {
-            float flashT = t / 0.12f;
-            float flashSize = 6f * scale * flashT;
-            int flashA = (int)(200 * (1f - flashT));
+            float flashT = t / 0.15f;
+            // 核心闪光
+            float flashSize = 10f * scale * flashT;
+            int flashA = (int)(220 * (1f - flashT));
             _brush.Color = Color.FromArgb(flashA, baseColor);
             g.FillEllipse(_brush, cx - flashSize, cy - flashSize, flashSize * 2, flashSize * 2);
+            // 白色高光核心
+            float coreSize = 5f * scale * (1f - flashT);
+            int coreA = (int)(180 * (1f - flashT));
+            _brush.Color = Color.FromArgb(coreA, Color.White);
+            g.FillEllipse(_brush, cx - coreSize, cy - coreSize, coreSize * 2, coreSize * 2);
+            // 冲击波环
+            float ringSize = 18f * scale * flashT;
+            float ringAlpha = (1f - flashT) * 0.6f;
+            _edgePen.Color = Color.FromArgb((int)(255 * ringAlpha), baseColor);
+            _edgePen.Width = 2.5f * scale * (1f - flashT);
+            g.DrawEllipse(_edgePen, cx - ringSize, cy - ringSize, ringSize * 2, ringSize * 2);
+        }
+
+        // ---- 碎片阶段 ----
+        float fragT = Math.Max(0f, (t - 0.08f) / 0.92f);
+        if (fragT <= 0f) return;
+
+        float fragAlpha = 1f - Easing.EaseInQuad(fragT);
+        if (fragAlpha <= 0f) return;
+
+        float time = fragT * Duration / 1000f;
+
+        // 预计算重力偏移（所有碎片共享）
+        float gravOffX = 0.5f * data.GravityX * Gravity * time * time * scale;
+        float gravOffY = 0.5f * data.GravityY * Gravity * time * time * scale;
+
+        // ---- 大碎片 ----
+        for (int i = 0; i < BigFragCount; i++)
+        {
+            float bri = data.BigBri[i];
+            float px = cx + data.BigVx[i] * time * scale + gravOffX;
+            float py = cy + data.BigVy[i] * time * scale + gravOffY;
+
+            float rotRad = data.BigRotSpeed[i] * time * Deg2Rad;
+            float sizeFade = fragT < 0.6f ? 1f : 1f - (fragT - 0.6f) / 0.4f;
+            float sz = data.BigSize[i] * scale * sizeFade;
+            if (sz < 0.5f) continue;
+
+            int a = (int)(255 * fragAlpha * bri);
+            _brush.Color = Color.FromArgb(a,
+                Math.Min(255, (int)(baseColor.R * bri)),
+                Math.Min(255, (int)(baseColor.G * bri)),
+                Math.Min(255, (int)(baseColor.B * bri)));
+
+            float rotCos = (float)Math.Cos(rotRad);
+            float rotSin = (float)Math.Sin(rotRad);
+            float[] sx = data.BigShapeX[i];
+            float[] sy = data.BigShapeY[i];
+            int vCount = sx.Length;
+
+            PointF[] pts = data.BigPts[i];
+
+            for (int j = 0; j < vCount; j++)
+            {
+                pts[j].X = sx[j] * sz * rotCos - sy[j] * sz * rotSin + px;
+                pts[j].Y = sx[j] * sz * rotSin + sy[j] * sz * rotCos + py;
+            }
+
+            g.FillPolygon(_brush, pts);
+
+            // 边缘高光
+            int edgeA = (int)(a * 0.35f);
+            _edgePen.Color = Color.FromArgb(edgeA, Color.White);
+            _edgePen.Width = 0.8f * scale;
+            g.DrawPolygon(_edgePen, pts);
+        }
+
+        // ---- 小碎屑 ----
+        for (int i = 0; i < SmallFragCount; i++)
+        {
+            float bri = data.SmBri[i];
+            float smAlpha = fragT < 0.4f ? 1f : 1f - (fragT - 0.4f) / 0.6f;
+            if (smAlpha <= 0f) continue;
+
+            float px = cx + data.SmVx[i] * time * scale + gravOffX;
+            float py = cy + data.SmVy[i] * time * scale + gravOffY;
+
+            float sz = data.SmSize[i] * scale * smAlpha;
+            if (sz < 0.3f) continue;
+
+            int a = (int)(255 * smAlpha * fragAlpha * bri);
+            _brush.Color = Color.FromArgb(a,
+                Math.Min(255, (int)(baseColor.R * bri)),
+                Math.Min(255, (int)(baseColor.G * bri)),
+                Math.Min(255, (int)(baseColor.B * bri)));
+
+            g.FillEllipse(_brush, px - sz, py - sz, sz * 2, sz * 2);
         }
     }
 }
@@ -950,8 +1024,8 @@ class FingerEffect : IClickEffect
     public int Duration { get { return 500; } }
 
     const float StartDist = 55f;
-    const float EmojiSize = 64f;     // 渲染分辨率（越大越清晰）
-    const float DisplayScale = 0.45f; // 显示缩放（控制实际显示大小）
+    const float EmojiSize = 192f;    // 渲染分辨率（高分辨率保证放大不糊）
+    const float DisplayScale = 0.15f; // 显示缩放（与 EmojiSize 配合保持原始显示大小）
     static readonly float PI = (float)Math.PI;
 
     class Data
