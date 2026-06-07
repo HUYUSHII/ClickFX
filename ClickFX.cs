@@ -284,6 +284,10 @@ class OverlayManager : IDisposable
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
+        else
+        {
+            _hotkeyForm.UnregisterHotkey();
+        }
     }
 
     void OpenSettings()
