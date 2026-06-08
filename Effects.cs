@@ -121,7 +121,7 @@ static class Easing
 class LineBurstEffect : IClickEffect
 {
     public string Name { get { return "线条爆发"; } }
-    public int Duration { get { return 600; } }
+    public int Duration { get { return 500; } }
 
     const float EraseDistance = 13f;
     static readonly float[] LineLengths = { 10f, 11f, 10f };

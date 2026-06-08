@@ -564,6 +564,8 @@ class OverlayForm : Form
         }
     }
 
+    protected override void OnPaintBackground(PaintEventArgs e) { } // 分层窗口无需擦除背景
+
     protected override void OnPaint(PaintEventArgs e)
     {
         if (Manager == null) return;
