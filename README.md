@@ -69,6 +69,18 @@
 
 ---
 
+## 🔧 从源码构建
+
+只需运行 `build.bat`，它会自动编译并打包成单个 `ClickFX.exe`：
+
+```
+build.bat
+```
+
+需要 .NET Framework 4.8（Windows 10 / 11 自带），无需安装 Visual Studio 或任何第三方依赖。
+
+---
+
 ## 🙏 致谢
 
 灵感来自 [ClickShow](https://github.com/cuiliang/ClickShow) — cuiliang 大佬的鼠标点击效果工具，在此致敬！
