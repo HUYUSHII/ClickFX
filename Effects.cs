@@ -19,7 +19,7 @@ interface IClickEffect
 
 // ==================== 动画状态 ====================
 
-class AnimationState
+class AnimationState : IDisposable
 {
     public Point Position;
     public int Age;
@@ -77,6 +77,16 @@ class AnimationState
             default: r = v; g = p; b = q; break;
         }
         return Color.FromArgb((int)(r * 255), (int)(g * 255), (int)(b * 255));
+    }
+
+    public void Dispose()
+    {
+        var disposable = EffectData as IDisposable;
+        if (disposable != null)
+        {
+            disposable.Dispose();
+        }
+        EffectData = null;
     }
 }
 
@@ -1063,11 +1073,20 @@ class FingerEffect : IClickEffect
     const float DisplayScale = 0.15f; // 显示缩放（与 EmojiSize 配合保持原始显示大小）
     static readonly float PI = (float)Math.PI;
 
-    class Data
+    class Data : IDisposable
     {
         public float Angle;
         public float RotationDeg;
         public Bitmap EmojiBmp;
+
+        public void Dispose()
+        {
+            if (EmojiBmp != null)
+            {
+                EmojiBmp.Dispose();
+                EmojiBmp = null;
+            }
+        }
     }
 
     System.Drawing.Imaging.ImageAttributes _imgAttrs;
@@ -1078,34 +1097,36 @@ class FingerEffect : IClickEffect
         new float[] {0, 0, 0, 1, 0},
         new float[] {0, 0, 0, 0, 1},
     };
+    Font _emojiFont;
+
+    public FingerEffect()
+    {
+        _emojiFont = new Font("Segoe UI Emoji", EmojiSize, GraphicsUnit.Pixel);
+    }
 
     public void Cleanup()
     {
+        // EffectData 中的 EmojiBmp 由 AnimationState.Dispose() 显式释放
         if (_imgAttrs != null) _imgAttrs.Dispose();
-        // EffectData 中的 EmojiBmp 由 EffectRegistry.Cleanup 间接触发
-        // 但 EffectData 是 object 类型，这里无法直接访问
-        // Bitmap 会在 GC 时回收，此处不阻塞
+        if (_emojiFont != null) _emojiFont.Dispose();
     }
 
     Bitmap RenderEmoji(float size)
     {
-        using (var font = new Font("Segoe UI Emoji", size, GraphicsUnit.Pixel))
+        string emoji = "👆";
+        var measured = TextRenderer.MeasureText(emoji, _emojiFont);
+        int w = measured.Width + 4;
+        int h = measured.Height + 4;
+        if (w < 8) w = 8;
+        if (h < 8) h = 8;
+        var bmp = new Bitmap(w, h);
+        using (var g = Graphics.FromImage(bmp))
         {
-            string emoji = "👆";
-            var measured = TextRenderer.MeasureText(emoji, font);
-            int w = measured.Width + 4;
-            int h = measured.Height + 4;
-            if (w < 8) w = 8;
-            if (h < 8) h = 8;
-            var bmp = new Bitmap(w, h);
-            using (var g = Graphics.FromImage(bmp))
-            {
-                g.Clear(Color.Transparent);
-                TextRenderer.DrawText(g, emoji, font, new Point(2, 2),
-                    Color.White, Color.Transparent);
-            }
-            return bmp;
+            g.Clear(Color.Transparent);
+            TextRenderer.DrawText(g, emoji, _emojiFont, new Point(2, 2),
+                Color.White, Color.Transparent);
         }
+        return bmp;
     }
 
     public void Draw(Graphics g, AnimationState anim, ColorConfig color, Rectangle screenBounds)

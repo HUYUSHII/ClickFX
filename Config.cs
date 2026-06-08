@@ -23,6 +23,7 @@ class AppConfig
     public int HotkeyModifiers { get; set; }
     public int HotkeyKey { get; set; }
     public float EffectScale { get; set; }
+    public string TriggerMode { get; set; }
 
     public AppConfig()
     {
@@ -37,6 +38,7 @@ class AppConfig
         HotkeyModifiers = 0;
         HotkeyKey = 0;
         EffectScale = 1.0f;
+        TriggerMode = "Up";
     }
 }
 
@@ -149,7 +151,8 @@ static class ConfigManager
             + "  \"HotkeyModifiers\": " + c.HotkeyModifiers + ",\n"
             + "  \"HotkeyKey\": " + c.HotkeyKey + ",\n"
             + "  \"EffectScale\": " + c.EffectScale.ToString("0.0",
-                System.Globalization.CultureInfo.InvariantCulture) + "\n"
+                System.Globalization.CultureInfo.InvariantCulture) + ",\n"
+            + "  \"TriggerMode\": " + Quote(c.TriggerMode ?? "Up") + "\n"
             + "}";
     }
 
@@ -205,6 +208,8 @@ static class ConfigManager
             System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out f))
             c.EffectScale = f;
+        if (d.ContainsKey("TriggerMode"))
+            c.TriggerMode = d["TriggerMode"];
 
         return c;
     }
@@ -323,7 +328,7 @@ class ConfigForm : Form
     public AppConfig Result { get; private set; }
     public Action<AppConfig> OnPreview; // 实时预览回调
 
-    ComboBox _leftEffectCombo, _rightEffectCombo;
+    ComboBox _leftEffectCombo, _rightEffectCombo, _triggerModeCombo;
     Panel _leftPreview, _rightPreview;
     TextBox _leftHex, _rightHex;
     Button _leftPick, _rightPick;
@@ -367,6 +372,7 @@ class ConfigForm : Form
         c.HotkeyModifiers = _hotkeyModifiers;
         c.HotkeyKey = _hotkeyKey;
         c.EffectScale = _currentScale;
+        c.TriggerMode = (_triggerModeCombo.SelectedIndex == 1) ? "Down" : "Up";
         return c;
     }
 
@@ -383,7 +389,7 @@ class ConfigForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(344, 286);
+        ClientSize = new Size(344, 330);
 
         int y = 15;
 
@@ -457,6 +463,19 @@ class ConfigForm : Form
         var resetBtn = new Button { Text = "恢复默认", Location = new Point(262, y - 3), Size = new Size(70, 24) };
         resetBtn.Click += (s, e) => ResetEffects();
         Controls.Add(resetBtn);
+        y += 32;
+
+        // 触发时机
+        Controls.Add(new Label { Text = "触发时机：", Location = new Point(12, y + 3), AutoSize = true });
+        _triggerModeCombo = new ComboBox
+        {
+            Location = new Point(80, y),
+            Size = new Size(100, 25),
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+        _triggerModeCombo.Items.AddRange(new object[] { "抬起时", "按下时" });
+        _triggerModeCombo.SelectedIndexChanged += (s, e) => NotifyPreview();
+        Controls.Add(_triggerModeCombo);
         y += 32;
 
         // 显示快捷键
@@ -541,6 +560,7 @@ class ConfigForm : Form
         _rightRandomBtn.Checked = false;
         _currentScale = defaults.EffectScale;
         _scaleValueLabel.Text = _currentScale.ToString("0.0") + "x";
+        _triggerModeCombo.SelectedIndex = 0;
     }
 
     void SetHotkey()
@@ -590,6 +610,7 @@ class ConfigForm : Form
         _hotkeyModifiers = config.HotkeyModifiers;
         _hotkeyKey = config.HotkeyKey;
         _hotkeyDisplayLabel.Text = HotkeyToString(_hotkeyModifiers, _hotkeyKey);
+        _triggerModeCombo.SelectedIndex = (config.TriggerMode == "Down") ? 1 : 0;
     }
 
     void ApplyValues()

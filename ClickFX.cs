@@ -122,7 +122,9 @@ public struct BITMAPINFOHEADER
 static class WinConsts
 {
     public const int WH_MOUSE_LL = 14;
+    public const int WM_LBUTTONDOWN = 0x0201;
     public const int WM_LBUTTONUP = 0x0202;
+    public const int WM_RBUTTONDOWN = 0x0204;
     public const int WM_RBUTTONUP = 0x0205;
     public const int WM_HOTKEY = 0x0312;
     public const int WS_EX_LAYERED = 0x00080000;
@@ -208,6 +210,7 @@ class OverlayManager : IDisposable
     public AppConfig Config { get; private set; }
 
     const int TICK_MS = 16;
+    const int MAX_ANIMATIONS = 200;
 
     public OverlayManager()
     {
@@ -327,8 +330,21 @@ class OverlayManager : IDisposable
             {
                 _animations[i].Age += TICK_MS;
                 if (_animations[i].Age > _animations[i].Duration)
+                {
+                    _animations[i].Dispose();
                     _animations.RemoveAt(i);
+                }
             }
+
+            // 超出上限时挤掉最旧的动画，防止无限增长
+            int overflow = _animations.Count - MAX_ANIMATIONS;
+            if (overflow > 0)
+            {
+                for (int i = 0; i < overflow; i++)
+                    _animations[i].Dispose();
+                _animations.RemoveRange(0, overflow);
+            }
+
             hasAnimations = _animations.Count > 0;
         }
 
@@ -349,15 +365,14 @@ class OverlayManager : IDisposable
             int msg = (int)wParam;
             var pos = new Point(info.pt.X, info.pt.Y);
 
-            switch (msg)
-            {
-                case WinConsts.WM_LBUTTONUP:
-                    AddAnimation(pos, MouseButtons.Left);
-                    break;
-                case WinConsts.WM_RBUTTONUP:
-                    AddAnimation(pos, MouseButtons.Right);
-                    break;
-            }
+            bool triggerDown = Config.TriggerMode == "Down";
+            int leftMsg = triggerDown ? WinConsts.WM_LBUTTONDOWN : WinConsts.WM_LBUTTONUP;
+            int rightMsg = triggerDown ? WinConsts.WM_RBUTTONDOWN : WinConsts.WM_RBUTTONUP;
+
+            if (msg == leftMsg)
+                AddAnimation(pos, MouseButtons.Left);
+            else if (msg == rightMsg)
+                AddAnimation(pos, MouseButtons.Right);
         }
         return NativeMethods.CallNextHookEx(_hookId, nCode, wParam, lParam);
     }
@@ -427,6 +442,12 @@ class OverlayManager : IDisposable
         }
         _timer.Stop();
         _timer.Dispose();
+        // 释放残留动画中的非托管资源（如 FingerEffect 的 Bitmap）
+        for (int i = _animations.Count - 1; i >= 0; i--)
+        {
+            try { _animations[i].Dispose(); } catch { }
+        }
+        _animations.Clear();
         for (int i = _overlays.Count - 1; i >= 0; i--)
         {
             try
