@@ -201,9 +201,10 @@ class OverlayManager : IDisposable
     IntPtr _hookId = IntPtr.Zero;
     LowLevelMouseProc _hookProc;
     NotifyIcon _trayIcon;
+    Icon _trayIconHandle;
     ToolStripMenuItem _toggleItem;
     HotkeyForm _hotkeyForm;
-    bool _enabled = true;
+    volatile bool _enabled = true;
     bool _settingsOpen;
 
     public AppConfig Config { get; private set; }
@@ -221,7 +222,8 @@ class OverlayManager : IDisposable
     public void Start()
     {
         _trayIcon = new NotifyIcon();
-        _trayIcon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        _trayIconHandle = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        _trayIcon.Icon = _trayIconHandle;
         _trayIcon.Text = "ClickFX";
         _trayIcon.Visible = true;
 
@@ -373,14 +375,16 @@ class OverlayManager : IDisposable
             int msg = (int)wParam;
             var pos = new Point(info.pt.X, info.pt.Y);
 
-            bool triggerDown = Config.TriggerMode == "Down";
+            // 取快照，避免跨线程读取 Config 时引用和字段不一致
+            var cfg = Config;
+            bool triggerDown = cfg.TriggerMode == "Down";
             int leftMsg = triggerDown ? WinConsts.WM_LBUTTONDOWN : WinConsts.WM_LBUTTONUP;
             int rightMsg = triggerDown ? WinConsts.WM_RBUTTONDOWN : WinConsts.WM_RBUTTONUP;
 
             if (msg == leftMsg)
-                AddAnimation(pos, MouseButtons.Left);
+                AddAnimation(pos, MouseButtons.Left, cfg);
             else if (msg == rightMsg)
-                AddAnimation(pos, MouseButtons.Right);
+                AddAnimation(pos, MouseButtons.Right, cfg);
         }
         return NativeMethods.CallNextHookEx(_hookId, nCode, wParam, lParam);
     }
@@ -388,15 +392,15 @@ class OverlayManager : IDisposable
     static readonly Random _globalRng = new Random();
     int _lastClickTick = int.MinValue;
 
-    void AddAnimation(Point pos, MouseButtons button)
+    void AddAnimation(Point pos, MouseButtons button, AppConfig cfg)
     {
         int now = Environment.TickCount;
         if ((now - _lastClickTick & int.MaxValue) < 50) return;
         _lastClickTick = now;
 
         var effectName = (button == MouseButtons.Left)
-            ? Config.LeftEffect
-            : Config.RightEffect;
+            ? cfg.LeftEffect
+            : cfg.RightEffect;
         var effect = EffectRegistry.Get(effectName) ?? EffectRegistry.GetFirst();
         if (effect == null) return;
         int duration = effect.Duration;
@@ -410,7 +414,7 @@ class OverlayManager : IDisposable
             {
                 Position = pos, Age = 0, Button = button, Duration = duration,
                 RandomSeed = seed, CachedEffect = effect,
-                Scale = Config.EffectScale
+                Scale = cfg.EffectScale
             });
         }
     }
@@ -477,6 +481,11 @@ class OverlayManager : IDisposable
             _trayIcon.Dispose();
             _trayIcon = null;
         }
+        if (_trayIconHandle != null)
+        {
+            _trayIconHandle.Dispose();
+            _trayIconHandle = null;
+        }
     }
 }
 
@@ -515,7 +524,19 @@ class OverlayForm : Form
         _cachedHdcMem = NativeMethods.CreateCompatibleDC(_cachedHdcScreen);
         if (_cachedHdcMem == IntPtr.Zero) { NativeMethods.DeleteObject(_cachedHBitmap); _cachedHBitmap = IntPtr.Zero; return; }
         _cachedOldObj = NativeMethods.SelectObject(_cachedHdcMem, _cachedHBitmap);
-        _cachedGraphics = Graphics.FromHdc(_cachedHdcMem);
+        try
+        {
+            _cachedGraphics = Graphics.FromHdc(_cachedHdcMem);
+        }
+        catch
+        {
+            NativeMethods.SelectObject(_cachedHdcMem, _cachedOldObj);
+            NativeMethods.DeleteDC(_cachedHdcMem);
+            NativeMethods.DeleteObject(_cachedHBitmap);
+            _cachedHBitmap = IntPtr.Zero;
+            _cachedHdcMem = IntPtr.Zero;
+            return;
+        }
         _cachedGraphics.SmoothingMode = SmoothingMode.AntiAlias;
         _cachedGraphics.CompositingQuality = CompositingQuality.HighSpeed;
         _cachedW = w;
@@ -562,6 +583,16 @@ class OverlayForm : Form
             cp.Style |= WinConsts.WS_POPUP;
             return cp;
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            ReleaseDib();
+            ReleaseScreenDc();
+        }
+        base.Dispose(disposing);
     }
 
     protected override void OnPaintBackground(PaintEventArgs e) { } // 分层窗口无需擦除背景

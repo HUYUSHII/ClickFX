@@ -156,7 +156,7 @@ class LineBurstEffect : IClickEffect
         int cy = anim.Position.Y - screenBounds.Y;
         float scale = anim.Scale;
 
-        float progress = Math.Min(1f, anim.Age / 500f);
+        float progress = Math.Min(1f, anim.Age / (float)Duration);
         if (progress >= 1f) return;
 
         Color baseColor = anim.GetColor(color);
@@ -201,7 +201,8 @@ class LineBurstEffect : IClickEffect
             int a = (int)(255 * alpha);
             _linePen.Color = Color.FromArgb(a, baseColor);
             _linePen.Width = 3f * scale;
-            _glowPen.Color = Color.FromArgb((int)(a * glowIntensity), baseColor);
+            int glowA = Math.Min(255, (int)(a * glowIntensity));
+            _glowPen.Color = Color.FromArgb(glowA, baseColor);
             _glowPen.Width = 1.5f * scale;
 
             float sx = cx + dirX * startDist;

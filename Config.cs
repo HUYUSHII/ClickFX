@@ -169,7 +169,7 @@ static class ConfigManager
     static string Quote(string s)
     {
         return "\"" + (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"")
-            .Replace("\n", "\\n").Replace("\r", "\\r") + "\"";
+            .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t") + "\"";
     }
 
     // ==================== 手动 JSON 解析 ====================
@@ -209,7 +209,7 @@ static class ConfigManager
         if (d.ContainsKey("EffectScale") && float.TryParse(d["EffectScale"],
             System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out f))
-            c.EffectScale = f;
+            c.EffectScale = Math.Max(0.3f, Math.Min(3.0f, f));
         if (d.ContainsKey("TriggerMode"))
             c.TriggerMode = d["TriggerMode"];
 
@@ -225,7 +225,7 @@ static class ConfigManager
         if (d.ContainsKey("GlowIntensity") && float.TryParse(d["GlowIntensity"],
             System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out f))
-            c.GlowIntensity = f;
+            c.GlowIntensity = Math.Max(0f, Math.Min(1f, f));
         if (d.ContainsKey("RandomColor"))
             c.RandomColor = d["RandomColor"].ToLower() == "true";
         return c;
@@ -662,6 +662,13 @@ class ConfigForm : Form
             hex = "#" + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
         hex = hex.ToUpper();
         if (hex.Length != 7) return "#000000";
+        // 验证 # 后的字符是否为合法十六进制
+        for (int i = 1; i < 7; i++)
+        {
+            char c = hex[i];
+            if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F')))
+                return "#000000";
+        }
         return hex;
     }
 
