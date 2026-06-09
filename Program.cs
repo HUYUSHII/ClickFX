@@ -10,6 +10,17 @@ static class Program
 {
     static Mutex _mutex;
 
+    // 供重启时提前释放 Mutex，避免新进程检测到"已在运行中"
+    internal static void ReleaseMutex()
+    {
+        if (_mutex != null)
+        {
+            try { _mutex.ReleaseMutex(); } catch { }
+            _mutex.Dispose();
+            _mutex = null;
+        }
+    }
+
     [DllImport("user32.dll")]
     static extern bool SetProcessDPIAware();
 
@@ -23,9 +34,23 @@ static class Program
         _mutex = new Mutex(true, "ClickFX_SingleInstance", out createdNew);
         if (!createdNew)
         {
-            MessageBox.Show("ClickFX 已在运行中。", "ClickFX",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
+            // 可能是重启过程中旧进程尚未完全退出，短暂等待后重试
+            _mutex.Dispose();
+            _mutex = null;
+            for (int i = 0; i < 20; i++)
+            {
+                System.Threading.Thread.Sleep(50);
+                _mutex = new Mutex(true, "ClickFX_SingleInstance", out createdNew);
+                if (createdNew) break;
+                _mutex.Dispose();
+                _mutex = null;
+            }
+            if (!createdNew)
+            {
+                MessageBox.Show("ClickFX 已在运行中。", "ClickFX",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
         }
 
         Application.EnableVisualStyles();

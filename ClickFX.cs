@@ -241,6 +241,10 @@ class OverlayManager : IDisposable
 
         menu.Items.Add(new ToolStripSeparator());
 
+        var restartItem = new ToolStripMenuItem("重启");
+        restartItem.Click += (s, e) => Restart();
+        menu.Items.Add(restartItem);
+
         var exitItem = new ToolStripMenuItem("退出");
         exitItem.Click += (s, e) => Exit();
         menu.Items.Add(exitItem);
@@ -441,6 +445,24 @@ class OverlayManager : IDisposable
     }
 
     public void Exit() { Application.Exit(); }
+
+    public void Restart()
+    {
+        // 先启动新进程，成功后再释放 Mutex 并退出；
+        // 新进程会短暂等待旧进程释放 Mutex，而非立即报错
+        try
+        {
+            Process.Start(Application.ExecutablePath);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("重启失败：" + ex.Message, "ClickFX",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        Program.ReleaseMutex();
+        Application.Exit();
+    }
 
     public void Dispose()
     {
